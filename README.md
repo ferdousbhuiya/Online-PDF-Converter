@@ -95,6 +95,24 @@ If you want frontend deployment fully through GitHub, use [.github/workflows/dep
 
 Note: Backend still needs a server host (container/VPS/cloud) because GitHub Pages is static-only.
 
+### If page shows blank on GitHub Pages
+
+This happens when Pages serves source files from branch root (it loads `/src/main.tsx`, which browsers cannot run directly).
+
+Fix:
+
+1. In repo **Settings → Pages**, keep **Deploy from branch**.
+2. Set Branch to `main` and Folder to `/docs`.
+3. Commit and push the generated `docs/` folder.
+4. For future updates, regenerate docs build:
+
+```bash
+npm install
+npm run build:pages
+```
+
+Then copy `dist` to `docs` (or use the existing local command flow) and push.
+
 ## Oracle Cloud 24/7 checklist (laptop can stay off)
 
 Use this when you want uninterrupted backend uptime without running your laptop.
