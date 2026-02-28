@@ -117,6 +117,12 @@ docker run -d --name pdf-toolkit-api --restart unless-stopped -p 8787:8787 -e PO
 6. Run workflow **Deploy Frontend (GitHub Pages)** and open:
 	- `https://ferdousbhuiya.github.io/Online-PDF-Converter/`
 
+If the site is already live, you can also set backend URL directly in the app:
+
+- Open **System Check**
+- Set **Backend API URL** to `http://<VM_PUBLIC_IP>:8787`
+- Click **Save URL** (no frontend redeploy required)
+
 ### Fill these values first
 
 Replace only the VM public IP placeholder, then follow the commands below:

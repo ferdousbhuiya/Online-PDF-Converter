@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { apiUrl } from './config/api'
+import { apiUrl, getApiBaseUrl, setApiBaseUrl } from './config/api'
 
 type HealthResponse = {
   ok: boolean
@@ -34,6 +34,7 @@ export function SystemCheckPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [health, setHealth] = useState<HealthResponse | null>(null)
+  const [apiBaseInput, setApiBaseInput] = useState(getApiBaseUrl())
 
   const refresh = async () => {
     setLoading(true)
@@ -56,6 +57,17 @@ export function SystemCheckPage() {
   useEffect(() => {
     void refresh()
   }, [])
+
+  const saveApiBase = () => {
+    setApiBaseUrl(apiBaseInput)
+    void refresh()
+  }
+
+  const resetApiBase = () => {
+    setApiBaseUrl('')
+    setApiBaseInput('')
+    void refresh()
+  }
 
   const rows = useMemo<StatusRow[]>(() => {
     const qpdf = Boolean(health?.binaries?.qpdf)
@@ -112,6 +124,22 @@ export function SystemCheckPage() {
       <section className="tool-page">
         <h2>System Check</h2>
         <p className="hint">Checks backend health and whether required native binaries are available.</p>
+
+        <div className="config-panel">
+          <p className="hint"><strong>Backend API URL (optional override)</strong></p>
+          <p className="hint">Example: http://&lt;VM_PUBLIC_IP&gt;:8787</p>
+          <div className="row">
+            <input
+              title="Backend API URL"
+              placeholder="http://<VM_PUBLIC_IP>:8787"
+              value={apiBaseInput}
+              onChange={(e) => setApiBaseInput(e.target.value)}
+            />
+            <button onClick={saveApiBase}>Save URL</button>
+            <button onClick={resetApiBase}>Reset</button>
+          </div>
+          <p className="hint">Saved in this browser only. Leave empty to use build-time default.</p>
+        </div>
 
         <div className="row">
           <button onClick={() => void refresh()} disabled={loading}>

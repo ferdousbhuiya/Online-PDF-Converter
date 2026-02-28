@@ -116,6 +116,18 @@ a {
   font-weight: 700;
 }
 
+.config-panel {
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.config-panel input {
+  min-width: 280px;
+}
+
 .install-panel {
   margin-top: 18px;
   padding-top: 14px;
