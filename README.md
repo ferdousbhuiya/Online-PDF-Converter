@@ -37,7 +37,7 @@ If binaries are not in PATH, set:
 
 - Use [Dockerfile](Dockerfile) at project root.
 - Expose port `8787` (or set `PORT` from your host).
-- Optional env var: `FRONTEND_ORIGIN=https://your-frontend-domain` (comma-separated for multiple origins).
+- Optional env var: `FRONTEND_ORIGIN=https://ferdousbhuiya.github.io` (comma-separated for multiple origins).
 - Health endpoint: `/api/health`.
 
 ### 2) Deploy frontend (Vercel/Netlify static)
@@ -47,7 +47,7 @@ If binaries are not in PATH, set:
 - Set env var at build time:
 
 ```bash
-VITE_API_BASE_URL=https://your-backend-domain
+VITE_API_BASE_URL=http://<VM_PUBLIC_IP>:8787
 ```
 
 - SPA rewrite is already configured for Vercel in [vercel.json](vercel.json).
@@ -66,17 +66,18 @@ If you want frontend deployment fully through GitHub, use [.github/workflows/dep
 
 ### Required repository secrets
 
+
 - Frontend deploy (Vercel):
 	- `VERCEL_TOKEN`
 	- `VERCEL_ORG_ID`
 	- `VERCEL_PROJECT_ID`
-	- `VITE_API_BASE_URL` (your public backend URL)
+	- `VITE_API_BASE_URL` (use `http://<VM_PUBLIC_IP>:8787` if no domain)
 
 - Frontend deploy (GitHub Pages):
-	- `VITE_API_BASE_URL` (your public backend URL)
+	- `VITE_API_BASE_URL` (use `http://<VM_PUBLIC_IP>:8787` if no domain)
 
 - Backend deploy (container):
-	- `BACKEND_IMAGE_NAME` (optional, defaults to `ghcr.io/<owner>/<repo>-api`)
+	- `BACKEND_IMAGE_NAME` (optional, defaults to `ghcr.io/ferdousbhuiya/Online-PDF-Converter-api`)
 	- `BACKEND_DEPLOY_HOOK` (optional webhook URL for your host auto-redeploy)
 
 ### How to use
@@ -88,9 +89,9 @@ If you want frontend deployment fully through GitHub, use [.github/workflows/dep
 ### GitHub Pages setup (frontend via GitHub only)
 
 1. In your GitHub repo, go to **Settings → Pages** and set Source to **GitHub Actions**.
-2. Add repository secret `VITE_API_BASE_URL` with your backend URL.
+2. Add repository secret `VITE_API_BASE_URL` with your backend URL (`http://<VM_PUBLIC_IP>:8787` if no domain).
 3. Run workflow **Deploy Frontend (GitHub Pages)** from the Actions tab (or push to `main`).
-4. Your site will be available at `https://<your-username>.github.io/<repo-name>/`.
+4. Your site will be available at `https://ferdousbhuiya.github.io/Online-PDF-Converter/`.
 
 Note: Backend still needs a server host (container/VPS/cloud) because GitHub Pages is static-only.
 
@@ -98,20 +99,38 @@ Note: Backend still needs a server host (container/VPS/cloud) because GitHub Pag
 
 Use this when you want uninterrupted backend uptime without running your laptop.
 
+### Quick Go-Live (no domain)
+
+1. Create Oracle Always Free VM and open inbound port `8787`.
+2. SSH into VM, install Docker (use commands below).
+3. Run backend container:
+
+```bash
+docker login ghcr.io -u ferdousbhuiya
+docker pull ghcr.io/ferdousbhuiya/Online-PDF-Converter-api:latest
+docker run -d --name pdf-toolkit-api --restart unless-stopped -p 8787:8787 -e PORT=8787 -e FRONTEND_ORIGIN=https://ferdousbhuiya.github.io ghcr.io/ferdousbhuiya/Online-PDF-Converter-api:latest
+```
+
+4. In GitHub repo **Settings → Secrets and variables → Actions**, set:
+	- `VITE_API_BASE_URL=http://<VM_PUBLIC_IP>:8787`
+5. In GitHub repo **Settings → Pages**, set Source to **GitHub Actions**.
+6. Run workflow **Deploy Frontend (GitHub Pages)** and open:
+	- `https://ferdousbhuiya.github.io/Online-PDF-Converter/`
+
 ### Fill these values first
 
-Replace placeholders once, then follow the commands below:
+Replace only the VM public IP placeholder, then follow the commands below:
 
-- `<owner>` = your GitHub username or org
-- `<repo>` = your GitHub repository name
-- `<your-username>` = your GitHub username
-- `api.yourdomain.com` = your backend API domain/subdomain
+- Owner = `ferdousbhuiya`
+- Repository = `Online-PDF-Converter`
+- GitHub username = `ferdousbhuiya`
+- `<VM_PUBLIC_IP>` = your Oracle VM public IP (for example `129.146.x.x`)
 
 Resulting values should look like:
 
-- Image: `ghcr.io/<owner>/<repo>-api:latest`
-- Frontend URL: `https://<your-username>.github.io/<repo>/`
-- API URL: `https://api.yourdomain.com`
+- Image: `ghcr.io/ferdousbhuiya/Online-PDF-Converter-api:latest`
+- Frontend URL: `https://ferdousbhuiya.github.io/Online-PDF-Converter/`
+- API URL: `http://<VM_PUBLIC_IP>:8787`
 
 ### 1) Create always-free VM
 
@@ -137,18 +156,18 @@ newgrp docker
 ### 3) Run backend container from GitHub Container Registry
 
 ```bash
-docker login ghcr.io -u <github-username>
-docker pull ghcr.io/<owner>/<repo>-api:latest
+docker login ghcr.io -u ferdousbhuiya
+docker pull ghcr.io/ferdousbhuiya/Online-PDF-Converter-api:latest
 docker run -d \
 	--name pdf-toolkit-api \
 	--restart unless-stopped \
 	-p 8787:8787 \
 	-e PORT=8787 \
-	-e FRONTEND_ORIGIN=https://<your-username>.github.io \
-	ghcr.io/<owner>/<repo>-api:latest
+	-e FRONTEND_ORIGIN=https://ferdousbhuiya.github.io \
+	ghcr.io/ferdousbhuiya/Online-PDF-Converter-api:latest
 ```
 
-### 4) Add HTTPS reverse proxy (Caddy)
+### 4) Optional: add HTTPS reverse proxy later (Caddy + custom domain)
 
 ```bash
 sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
@@ -158,7 +177,7 @@ sudo apt update
 sudo apt install -y caddy
 ```
 
-Create `/etc/caddy/Caddyfile`:
+Create `/etc/caddy/Caddyfile` (when you get a domain):
 
 ```caddy
 api.yourdomain.com {
@@ -175,11 +194,11 @@ sudo systemctl status caddy
 
 ### 5) Connect frontend
 
-- In GitHub repo secrets, set `VITE_API_BASE_URL=https://api.yourdomain.com`
+- In GitHub repo secrets, set `VITE_API_BASE_URL=http://<VM_PUBLIC_IP>:8787`
 - Re-run GitHub Pages deploy workflow
 - Open app → **System Check** → **Recheck**
 
-If you don’t have a custom domain yet, you can temporarily expose `http://<VM_PUBLIC_IP>:8787` for testing, then switch to HTTPS domain later.
+When you later buy a domain, switch this secret to `https://api.yourdomain.com` and enable Caddy.
 
 ### 6) Keep backend auto-updated from GitHub
 
