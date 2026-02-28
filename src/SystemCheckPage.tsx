@@ -7,6 +7,7 @@ type HealthResponse = {
   binaries?: {
     qpdf?: boolean
     libreoffice?: boolean
+    pdftoppm?: boolean
   }
 }
 
@@ -72,6 +73,7 @@ export function SystemCheckPage() {
   const rows = useMemo<StatusRow[]>(() => {
     const qpdf = Boolean(health?.binaries?.qpdf)
     const libre = Boolean(health?.binaries?.libreoffice)
+    const pdftoppm = Boolean(health?.binaries?.pdftoppm)
     const apiOnline = Boolean(health?.ok)
 
     const offline: StatusKind = 'offline'
@@ -91,6 +93,11 @@ export function SystemCheckPage() {
         tool: 'Repair PDF',
         dependency: 'qpdf',
         status: apiOnline ? (qpdf ? 'ready' : 'missing') : offline
+      },
+      {
+        tool: 'Redact PDF',
+        dependency: 'pdftoppm',
+        status: apiOnline ? (pdftoppm ? 'ready' : 'missing') : offline
       },
       {
         tool: 'PowerPoint to PDF',

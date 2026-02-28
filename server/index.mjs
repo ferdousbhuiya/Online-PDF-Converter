@@ -2,8 +2,9 @@ import express from 'express'
 import cors from 'cors'
 import multer from 'multer'
 import pdfParse from 'pdf-parse'
+import { PDFDocument, rgb } from 'pdf-lib'
 import { createWorker } from 'tesseract.js'
-import { mkdtemp, readFile, access, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, access, rm, writeFile, readdir } from 'node:fs/promises'
 import { constants as fsConstants } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -64,16 +65,134 @@ async function resolveLibreOfficeBinary() {
   ].filter(Boolean))
 }
 
+async function resolvePdftoppmBinary() {
+  return findBinary([
+    process.env.PDFTOPPM_PATH,
+    'pdftoppm',
+    '/usr/bin/pdftoppm',
+    'C:/Program Files/poppler/bin/pdftoppm.exe'
+  ].filter(Boolean))
+}
+
 app.get('/api/health', async (_req, res) => {
   const qpdf = await resolveQpdfBinary()
   const soffice = await resolveLibreOfficeBinary()
+  const pdftoppm = await resolvePdftoppmBinary()
   res.json({
     ok: true,
     binaries: {
       qpdf: Boolean(qpdf),
-      libreoffice: Boolean(soffice)
+      libreoffice: Boolean(soffice),
+      pdftoppm: Boolean(pdftoppm)
     }
   })
+})
+
+function parseRedactions(raw) {
+  let parsed
+  try {
+    parsed = JSON.parse(String(raw || '[]'))
+  } catch {
+    return []
+  }
+
+  if (!Array.isArray(parsed)) return []
+
+  return parsed
+    .map((entry) => ({
+      page: Number(entry.page),
+      x: Number(entry.x),
+      y: Number(entry.y),
+      width: Number(entry.width),
+      height: Number(entry.height)
+    }))
+    .filter((entry) => Number.isFinite(entry.page)
+      && Number.isFinite(entry.x)
+      && Number.isFinite(entry.y)
+      && Number.isFinite(entry.width)
+      && Number.isFinite(entry.height)
+      && entry.page >= 1
+      && entry.x >= 0
+      && entry.y >= 0
+      && entry.width > 0
+      && entry.height > 0)
+}
+
+app.post('/api/redact-pdf', upload.single('file'), async (req, res) => {
+  const pdftoppm = await resolvePdftoppmBinary()
+  if (!pdftoppm) {
+    res.status(501).json({ error: 'pdftoppm binary not found. Install poppler-utils or set PDFTOPPM_PATH.' })
+    return
+  }
+
+  const redactions = parseRedactions(req.body.redactions)
+  if (!req.file || redactions.length === 0) {
+    res.status(400).json({ error: 'file and redactions are required' })
+    return
+  }
+
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'pdf-toolkit-'))
+  try {
+    const stagePath = path.join(tempDir, 'stage-redacted.pdf')
+    const source = await PDFDocument.load(req.file.buffer)
+
+    redactions.forEach((entry) => {
+      const index = entry.page - 1
+      if (index < 0 || index >= source.getPageCount()) return
+      const page = source.getPage(index)
+      const { width, height } = page.getSize()
+
+      const rectX = entry.x * width
+      const rectWidth = Math.min(width - rectX, entry.width * width)
+      const rectHeight = Math.min(height, entry.height * height)
+      const topOriginY = entry.y * height
+      const rectY = Math.max(0, height - topOriginY - rectHeight)
+
+      page.drawRectangle({
+        x: rectX,
+        y: rectY,
+        width: Math.max(1, rectWidth),
+        height: Math.max(1, rectHeight),
+        color: rgb(0, 0, 0)
+      })
+    })
+
+    await writeFile(stagePath, await source.save())
+
+    const imagePrefix = path.join(tempDir, 'redacted-page')
+    await execFileAsync(pdftoppm, ['-jpeg', '-r', '220', stagePath, imagePrefix])
+
+    const generated = (await readdir(tempDir))
+      .filter((name) => /^redacted-page-\d+\.jpg$/i.test(name))
+      .sort((a, b) => {
+        const numA = Number(a.match(/(\d+)/)?.[0] || 0)
+        const numB = Number(b.match(/(\d+)/)?.[0] || 0)
+        return numA - numB
+      })
+
+    if (generated.length === 0) {
+      res.status(500).json({ error: 'No rasterized pages were generated for redaction output.' })
+      return
+    }
+
+    const out = await PDFDocument.create()
+    for (const imageName of generated) {
+      const imagePath = path.join(tempDir, imageName)
+      const imageBytes = await readFile(imagePath)
+      const embedded = await out.embedJpg(imageBytes)
+      const page = out.addPage([embedded.width, embedded.height])
+      page.drawImage(embedded, { x: 0, y: 0, width: embedded.width, height: embedded.height })
+    }
+
+    const bytes = await out.save()
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', 'attachment; filename="redacted.pdf"')
+    res.send(Buffer.from(bytes))
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Redaction failed' })
+  } finally {
+    await rm(tempDir, { recursive: true, force: true })
+  }
 })
 
 app.post('/api/pdf-to-text', upload.single('file'), async (req, res) => {
@@ -125,7 +244,7 @@ app.post('/api/protect-pdf', upload.single('file'), async (req, res) => {
   try {
     const inputPath = path.join(tempDir, sanitizeBasename(req.file.originalname || 'input.pdf'))
     const outputPath = path.join(tempDir, 'protected.pdf')
-    await import('node:fs/promises').then((fs) => fs.writeFile(inputPath, req.file.buffer))
+    await writeFile(inputPath, req.file.buffer)
 
     await execFileAsync(qpdf, [
       '--encrypt',
@@ -165,7 +284,7 @@ app.post('/api/unlock-pdf', upload.single('file'), async (req, res) => {
   try {
     const inputPath = path.join(tempDir, sanitizeBasename(req.file.originalname || 'input.pdf'))
     const outputPath = path.join(tempDir, 'unlocked.pdf')
-    await import('node:fs/promises').then((fs) => fs.writeFile(inputPath, req.file.buffer))
+    await writeFile(inputPath, req.file.buffer)
 
     const args = password
       ? [`--password=${password}`, '--decrypt', inputPath, outputPath]
@@ -199,7 +318,7 @@ app.post('/api/repair-pdf', upload.single('file'), async (req, res) => {
   try {
     const inputPath = path.join(tempDir, sanitizeBasename(req.file.originalname || 'input.pdf'))
     const outputPath = path.join(tempDir, 'repaired.pdf')
-    await import('node:fs/promises').then((fs) => fs.writeFile(inputPath, req.file.buffer))
+    await writeFile(inputPath, req.file.buffer)
 
     await execFileAsync(qpdf, ['--linearize', inputPath, outputPath])
 
@@ -231,7 +350,7 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
   try {
     const inputName = sanitizeBasename(req.file.originalname || 'input.bin')
     const inputPath = path.join(tempDir, inputName)
-    await import('node:fs/promises').then((fs) => fs.writeFile(inputPath, req.file.buffer))
+    await writeFile(inputPath, req.file.buffer)
 
     await execFileAsync(soffice, ['--headless', '--convert-to', target, '--outdir', tempDir, inputPath], {
       windowsHide: true

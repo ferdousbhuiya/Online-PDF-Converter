@@ -194,6 +194,117 @@ function TextResultTool({ title, endpoint, accept, note }: { title: string; endp
   )
 }
 
+function NoticeTool({ title, message }: { title: string; message: string }) {
+  return (
+    <ToolShell title={title}>
+      <p className="hint">{message}</p>
+    </ToolShell>
+  )
+}
+
+function CropTool() {
+  const [file, setFile] = useState<File | null>(null)
+  const [marginPercent, setMarginPercent] = useState(5)
+
+  const run = async () => {
+    if (!file) return
+    const doc = await PDFDocument.load(await toBytes(file))
+    doc.getPages().forEach((page) => {
+      const { width, height } = page.getSize()
+      const marginX = (width * marginPercent) / 100
+      const marginY = (height * marginPercent) / 100
+      const cropWidth = Math.max(1, width - marginX * 2)
+      const cropHeight = Math.max(1, height - marginY * 2)
+      page.setCropBox(marginX, marginY, cropWidth, cropHeight)
+    })
+    saveAs(toPdfBlob(await doc.save()), 'cropped.pdf')
+  }
+
+  return (
+    <ToolShell title="Crop PDF">
+      <p className="hint">Applies equal crop margin to all pages.</p>
+      <FilePicker accept=".pdf,application/pdf" onFiles={(files) => setFile(files[0] || null)} />
+      <div className="row">
+        <input
+          type="number"
+          title="Crop margin percent"
+          min={0}
+          max={40}
+          value={marginPercent}
+          onChange={(e) => setMarginPercent(Math.min(40, Math.max(0, Number(e.target.value) || 0)))}
+        />
+        <button onClick={run} disabled={!file}>
+          Crop
+        </button>
+      </div>
+    </ToolShell>
+  )
+}
+
+function RedactTool() {
+  const [file, setFile] = useState<File | null>(null)
+  const [rules, setRules] = useState('1,0.1,0.2,0.6,0.1')
+  const [busy, setBusy] = useState(false)
+  const [status, setStatus] = useState('')
+
+  const parseRules = () => {
+    const entries = rules
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => line.split(',').map((item) => Number(item.trim())))
+      .filter((parts) => parts.length === 5 && parts.every((n) => Number.isFinite(n)))
+      .map(([page, x, y, width, height]) => ({ page, x, y, width, height }))
+
+    return entries
+  }
+
+  const run = async () => {
+    if (!file) return
+    const redactions = parseRules()
+    if (!redactions.length) {
+      setStatus('Enter at least one valid rule.')
+      return
+    }
+
+    setBusy(true)
+    setStatus('Processing...')
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      form.append('redactions', JSON.stringify(redactions))
+
+      const response = await postFormData('/api/redact-pdf', form)
+      saveAs(await response.blob(), 'redacted.pdf')
+      setStatus('Done')
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Redaction failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <ToolShell title="Redact PDF">
+      <p className="hint">Rule format per line: page,x,y,width,height (normalized 0..1 from top-left).</p>
+      <p className="hint">Example: 1,0.1,0.2,0.6,0.1</p>
+      <FilePicker accept=".pdf,application/pdf" onFiles={(files) => setFile(files[0] || null)} />
+      <textarea
+        title="Redaction rules"
+        placeholder="1,0.1,0.2,0.6,0.1"
+        value={rules}
+        onChange={(e) => setRules(e.target.value)}
+      />
+      <div className="row">
+        <button onClick={run} disabled={!file || busy}>
+          Redact
+        </button>
+      </div>
+      {status ? <p className="hint">{status}</p> : null}
+    </ToolShell>
+  )
+}
+
 function ScanToPdfTool() {
   const [files, setFiles] = useState<File[]>([])
   const [busy, setBusy] = useState(false)
@@ -831,6 +942,15 @@ export function ToolRouter({ slug }: { slug: string }) {
       return <PageNumberTool />
     case 'add-watermark':
       return <WatermarkTool />
+    case 'crop-pdf':
+      return <CropTool />
+    case 'edit-pdf':
+      return (
+        <NoticeTool
+          title="Edit PDF"
+          message="Full text/object-level PDF editing needs a dedicated editor engine. You can currently use rotate, crop, watermark, page numbers, metadata, and sign tools in this app."
+        />
+      )
     case 'edit-metadata':
       return <MetadataTool />
     case 'unlock-pdf':
@@ -911,6 +1031,22 @@ export function ToolRouter({ slug }: { slug: string }) {
       )
     case 'pdf-to-text':
       return <TextResultTool title="PDF to Text" endpoint="/api/pdf-to-text" accept=".pdf,application/pdf" />
+    case 'pdf-to-pdfa':
+      return (
+        <NoticeTool
+          title="PDF to PDF/A"
+          message="PDF/A conversion requires a compliance conversion engine (typically Ghostscript/LibreOffice profiles). This route is included and ready for backend wiring."
+        />
+      )
+    case 'redact-pdf':
+      return <RedactTool />
+    case 'translate-pdf':
+      return (
+        <NoticeTool
+          title="Translate PDF"
+          message="PDF translation requires external language/AI translation services plus layout reconstruction. This route is included for future backend integration."
+        />
+      )
     case 'repair-pdf':
       return (
         <BackendBinaryTool

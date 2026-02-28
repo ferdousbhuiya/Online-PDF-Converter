@@ -25,6 +25,7 @@ Use **System Check** from the homepage to verify API reachability and dependency
 
 - `qpdf` for `Protect PDF`, `Unlock PDF`, `Repair PDF`
 - `LibreOffice` (`soffice`) for `PowerPoint/Word/Excel/PDF` backend conversions
+- `pdftoppm` (Poppler) for irreversible-style `Redact PDF` flattening
 
 If binaries are not in PATH, set:
 
@@ -253,6 +254,7 @@ When you later buy a domain, switch this secret to `https://api.yourdomain.com` 
 ### Backend-powered routes now wired
 - Protect PDF / Unlock PDF (via `qpdf`)
 - Repair PDF (via `qpdf --linearize`)
+- Redact PDF (area-based redaction + flattened output)
 - PDF to Text (server extraction)
 - OCR PDF/Image to text (server OCR)
 - PowerPoint to PDF (via LibreOffice)
