@@ -2,15 +2,6 @@ name: Deploy Frontend (Vercel)
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - src/**
-      - index.html
-      - package.json
-      - vite.config.ts
-      - tsconfig*.json
-      - vercel.json
 
 jobs:
   deploy:
